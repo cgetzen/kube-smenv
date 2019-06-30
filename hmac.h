@@ -1,6 +1,3 @@
-#ifndef HMAC_SHA2_H
-#define HMAC_SHA2_H
-
 #include "sha.h"
 
 typedef struct {
@@ -25,6 +22,3 @@ void hmac_sha256_final(hmac_sha256_ctx *ctx, unsigned char *mac,
 void hmac_sha256(const unsigned char *key, unsigned int key_size,
                  const unsigned char *message, unsigned int message_len,
                  unsigned char *mac, unsigned mac_size);
-
-
-#endif /* !HMAC_SHA2_H */

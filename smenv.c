@@ -4,10 +4,8 @@
 #include <sys/time.h>
 #include <curl/curl.h>
 
-#include "sha-256.h"
+#include "sha.h"
 #include "hmac.h"
-
-#define isutf(c) (((c)&0xC0)!=0x80)
 
 char* method = "POST";
 char* service = "secretsmanager";
@@ -55,7 +53,7 @@ unsigned char* getSignatureKey(const unsigned char* key, const unsigned char* da
 
 char* hex_sha(const char* input) {
 	unsigned char sha[300];
-	calc_sha_256(sha, input, strlen(input));
+	sha256((const unsigned char*)input, strlen(input), (unsigned char *) sha);
 	char* hex_dump = (char*) malloc(64 * sizeof(char));
 	for (int i = 0; i < 32; i++) {
 		sprintf(hex_dump+i+i, "%02x", *(sha+i));
