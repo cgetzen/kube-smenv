@@ -25,7 +25,8 @@ struct MemoryStruct {
 };
 
 unsigned char* sign(const unsigned char* akey, const unsigned char* msg) {
-	unsigned char* mac = (unsigned char*) malloc(SHA512_DIGEST_SIZE * sizeof(unsigned char));
+	unsigned char* mac = (unsigned char*) malloc((SHA256_DIGEST_SIZE+1) * sizeof(unsigned char));
+	mac[SHA256_DIGEST_SIZE] = 0;
 	hmac_sha256(akey, strlen((char *)akey), msg, strlen((char *)msg), mac, SHA256_DIGEST_SIZE);
 	return mac;
 }
