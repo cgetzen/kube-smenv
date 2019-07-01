@@ -6,6 +6,7 @@
 
 #include "sha.h"
 #include "hmac.h"
+#include "jsmn.h"
 
 char* method = "POST";
 char* service = "secretsmanager";
@@ -97,7 +98,26 @@ void get_times(char* amz_date, char* date_stamp) {
 	sprintf(date_stamp, "%02d%02d%02d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday );
 }
 
-int main() {
+static int jsoneq(const char *json, jsmntok_t *tok, const char *s) {
+  if (tok->type == JSMN_STRING && (int)strlen(s) == tok->end - tok->start &&
+      strncmp(json + tok->start, s, tok->end - tok->start) == 0) {
+    return 0;
+  }
+  return -1;
+}
+
+
+int main(int argc, char **argv) {
+  int arg_len = 0;
+  for (int i = 1; i < argc; i++) {
+    arg_len += strlen(argv[i]) + 1;
+  }
+  char * command = (char *) malloc(arg_len * sizeof(char));
+  for (int i = 1; i < argc; i++) {
+    strcpy(command + strlen(command), argv[i]);
+    strcpy(command + strlen(command), " ");
+  }
+
 	char * access_key = getenv("ACCESS_KEY_ID");
 	char * secret_key = getenv("SECRET_ACCESS_KEY");
 	if (!(secret_key && secret_key))  {
@@ -183,6 +203,35 @@ int main() {
 	printf("%s\n", chunk.memory);
   curl_easy_cleanup(curl);
   curl_global_cleanup();
+
+  jsmn_parser p;
+  jsmntok_t t[128];
+  jsmn_init(&p);
+  int r = jsmn_parse(&p, chunk.memory, strlen(chunk.memory), t, 15);
+
+  char * secretString;
+  for (int i = 1; i < r; i++) {
+    if (jsoneq(chunk.memory, &t[i], "SecretString") == 0) {
+      /* We may use strndup() to fetch string value */
+      secretString = (char *) malloc((t[i + 1].end - t[i + 1].start) * sizeof(char *));
+      sprintf(secretString, "%.*s", t[i + 1].end - t[i + 1].start, chunk.memory + t[i + 1].start);
+      break;
+    }
+  }
+
+  jsmn_init(&p);
+  r = jsmn_parse(&p, secretString, strlen(secretString), t, 15);
+  for (int i = 1; i < r; i+=2) {
+    char * key = (char *)calloc((t[i].end - t[i].start - 4), sizeof(char));
+    char * val = (char *)calloc((t[i+1].end - t[i+1].start - 4), sizeof(char));
+    sprintf(key, "%.*s", t[i].end - t[i].start - 4, secretString + 2 + t[i].start);
+    sprintf(val, "%.*s", t[i+1].end - t[i+1].start - 4, secretString + 2 + t[i+1].start);
+    setenv(key, val, 1);
+    free(key);
+    free(val);
+  }
+
+  system(command);
 
 	return 0;
 }
