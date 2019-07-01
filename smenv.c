@@ -4,10 +4,8 @@
 #include <sys/time.h>
 #include <curl/curl.h>
 
-#include "sha-256.h"
+#include "sha.h"
 #include "hmac.h"
-
-#define isutf(c) (((c)&0xC0)!=0x80)
 
 char* method = "POST";
 char* service = "secretsmanager";
@@ -20,6 +18,7 @@ char* amz_target = "secretsmanager.GetSecretValue";
 char* canonical_uri = "/";
 char* canonical_querystring = "";
 char* signed_headers = "content-type;host;x-amz-date;x-amz-target";
+int debug = 0;
 
 struct MemoryStruct {
   char *memory;
@@ -27,56 +26,49 @@ struct MemoryStruct {
 };
 
 unsigned char* sign(const unsigned char* akey, const unsigned char* msg) {
-	unsigned char* mac = (unsigned char*) malloc(SHA512_DIGEST_SIZE * sizeof(unsigned char));
-	hmac_sha256(akey, strlen((char *)akey), msg, strlen((char *)msg), mac, SHA256_DIGEST_SIZE);
+	unsigned char* mac = (unsigned char*) malloc(SHA256_DIGEST_SIZE+1 * sizeof(unsigned char));
+  mac[SHA256_DIGEST_SIZE] = 0;
+  int len = strlen((char *) akey);
+  if (len < 32) {
+    len = 32; // Bug -- if aKey has a zero as an element, it is interpreted as the end of list
+  }
+	hmac_sha256(akey, len, msg, strlen((char *)msg), mac, SHA256_DIGEST_SIZE);
 	return mac;
 }
 
 char* hex_dump(unsigned char* in) {
-	char* ret = (char*) malloc(strlen((char *)in) * 2 * sizeof(char));
-	for (int i = 0; i < strlen((char *)in); i++) {
-		sprintf(ret+i+i, "%02x", *(in+i));
+  int len = strlen((char *) in);
+	char* ret = (char*) calloc((len+1) * 2, sizeof(char));
+	for (int i = 0; i < len; i++) {
+		sprintf(ret+i+i, "%02x", in[i]);
 	}
 	return ret;
 }
 
 unsigned char* getSignatureKey(const unsigned char* key, const unsigned char* date_stamp,
 	const unsigned char* region_name, const unsigned char* service_name) {
-		unsigned char* intermediate = (unsigned char*) malloc(600 * sizeof(unsigned char));
+		unsigned char* intermediate = (unsigned char*) calloc(45, sizeof(unsigned char));
 		strcpy( (char*) intermediate, "AWS4" );
 		strcpy( (char*) intermediate+4, (char*) key);
 
 		unsigned char* kDate = sign((unsigned char*)intermediate, date_stamp);
+    free(intermediate);
 		unsigned char* kRegion = sign(kDate, region_name);
+    free(kDate);
 		unsigned char* kService = sign(kRegion, service_name);
+    free(kRegion);
 		unsigned char* kSigning = sign(kService, (unsigned char *) "aws4_request");
 		return kSigning;
 }
 
 char* hex_sha(const char* input) {
-	unsigned char sha[300];
-	calc_sha_256(sha, input, strlen(input));
-	char* hex_dump = (char*) malloc(64 * sizeof(char));
+	unsigned char *sha = calloc(300, sizeof(unsigned char));
+	sha256((const unsigned char*)input, strlen(input), (unsigned char *) sha);
+	char* hexa_dump = (char*) calloc(64, sizeof(char));
 	for (int i = 0; i < 32; i++) {
-		sprintf(hex_dump+i+i, "%02x", *(sha+i));
+		sprintf(hexa_dump+i+i, "%02x", sha[i]);
 	}
-	return hex_dump;
-}
-
-int main2() {
-	unsigned char key[]  =  "AWS4x/wpMs9iw5xPT6Dvo8u/402PofoBB6OW5o4Zm9zq";
-	unsigned char date[] = "20190627";
-	unsigned char* x = sign(key, date);
-	printf("%d\n", x[0]);
-	return 0;
-}
-
-int main3() {
-	unsigned char one[] = {105, 117, 48, 57, 207, 155, 51, 211, 145, 74, 55, 252, 139, 223, 141, 197, 175, 23, 72, 203, 242, 58, 85, 230, 124, 167, 38, 15, 25, 138, 163, 234};
-	unsigned char two[] = "us-east-1";
-	unsigned char* x = sign(one, two);
-	printf("%d\n", x[0]);
-	return 0;
+	return hexa_dump;
 }
 
 static size_t write_callback(void *contents, size_t size, size_t nmemb, void *userp) {
@@ -124,18 +116,25 @@ int main() {
 	char* payload_hash = hex_sha(request_parameters);
 	char canonical_request[600];
 	sprintf(canonical_request, "%s\n%s\n%s\n%s\n%s\n%s", method, canonical_uri, canonical_querystring, canonical_headers, signed_headers, payload_hash);
-	char* canonical_request_hash = hex_sha(canonical_request);
+  char* canonical_request_hash = hex_sha(canonical_request);
 	char* algorithm = "AWS4-HMAC-SHA256";
 	char credential_scope[300];
 	sprintf(credential_scope, "%s/%s/%s/%s", date_stamp, region, service, "aws4_request");
 	char string_to_sign[1000];
 	sprintf(string_to_sign, "%s\n%s\n%s\n%s", algorithm, amz_date, credential_scope, canonical_request_hash);
+  free(canonical_request_hash);
 
 	unsigned char * signing_key = getSignatureKey((unsigned char *)secret_key, (unsigned char *) date_stamp, (unsigned char *) region, (unsigned char *) service);
-	unsigned char * signature = sign(signing_key, (unsigned char *) string_to_sign);
+  unsigned char * signature = sign(signing_key, (unsigned char *) string_to_sign);
+
 	char authorization_header[1000];
 	sprintf(authorization_header, "%s Credential=%s/%s, SignedHeaders=%s, Signature=%s", algorithm, access_key, credential_scope, signed_headers, hex_dump(signature));
-
+  if (debug) {
+    printf("Canonical Request:\n%s\n\n", canonical_request);
+    printf("string to sign:\n%s\n\n", string_to_sign);
+    printf("request signature:\n%s\n\n", hex_dump(signature));
+    printf("auth header:\n%s\n\n", authorization_header);
+  }
 	// CURL
 	CURL *curl;
   CURLcode res;
