@@ -26,13 +26,9 @@ struct MemoryStruct {
   size_t size;
 };
 
-unsigned char* sign(const unsigned char* akey, const unsigned char* msg) {
+unsigned char* sign(const unsigned char* akey, unsigned int len, const unsigned char* msg) {
 	unsigned char* mac = (unsigned char*) malloc(SHA256_DIGEST_SIZE+1 * sizeof(unsigned char));
   mac[SHA256_DIGEST_SIZE] = 0;
-  int len = strlen((char *) akey);
-  if (len < 32) {
-    len = 32; // Bug -- if aKey has a zero as an element, it is interpreted as the end of list
-  }
 	hmac_sha256(akey, len, msg, strlen((char *)msg), mac, SHA256_DIGEST_SIZE);
 	return mac;
 }
@@ -52,13 +48,13 @@ unsigned char* getSignatureKey(const unsigned char* key, const unsigned char* da
 		strcpy( (char*) intermediate, "AWS4" );
 		strcpy( (char*) intermediate+4, (char*) key);
 
-		unsigned char* kDate = sign((unsigned char*)intermediate, date_stamp);
+		unsigned char* kDate = sign((unsigned char*)intermediate, 45, date_stamp);
     free(intermediate);
-		unsigned char* kRegion = sign(kDate, region_name);
+		unsigned char* kRegion = sign(kDate, 32, region_name);
     free(kDate);
-		unsigned char* kService = sign(kRegion, service_name);
+		unsigned char* kService = sign(kRegion, 32, service_name);
     free(kRegion);
-		unsigned char* kSigning = sign(kService, (unsigned char *) "aws4_request");
+		unsigned char* kSigning = sign(kService, 32, (unsigned char *) "aws4_request");
 		return kSigning;
 }
 
@@ -145,7 +141,7 @@ int main(int argc, char **argv) {
   free(canonical_request_hash);
 
 	unsigned char * signing_key = getSignatureKey((unsigned char *)secret_key, (unsigned char *) date_stamp, (unsigned char *) region, (unsigned char *) service);
-  unsigned char * signature = sign(signing_key, (unsigned char *) string_to_sign);
+	unsigned char * signature = sign(signing_key, strlen((char *) signing_key);, (unsigned char *) string_to_sign);
 
 	char authorization_header[1000];
 	sprintf(authorization_header, "%s Credential=%s/%s, SignedHeaders=%s, Signature=%s", algorithm, access_key, credential_scope, signed_headers, hex_dump(signature));
